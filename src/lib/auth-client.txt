@@ -1,0 +1,12 @@
+"use client";
+
+/**
+ * This is a client-safe auth file that doesn't use any server-only modules
+ * like Prisma or bcrypt. Use this in client components instead of auth.ts
+ */
+
+import { signIn as nextAuthSignIn, signOut as nextAuthSignOut } from "next-auth/react";
+
+// Export client-safe auth functions
+export const signIn = nextAuthSignIn;
+export const signOut = nextAuthSignOut; 

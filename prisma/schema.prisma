@@ -1,0 +1,366 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Summary
+// This schema powers a Webflow-like builder where:
+
+// Admins manage users/websites globally.
+
+// Users create/collaborate on sites with granular permissions.
+
+// Templates speed up site creation.
+
+// Analytics/Forms add business features.
+
+// Tickets/Notifications handle support.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum Icon {
+  settings
+  chart
+  calendar
+  check
+  chip
+  compass
+  database
+  flag
+  home
+  info
+  link
+  lock
+  messages
+  notification
+  payment
+  power
+  receipt
+  shield
+  star
+  tune
+  videorecorder
+  wallet
+  warning
+  headphone
+  send
+  pipelines
+  person
+  category
+  contact
+  clipboardIcon
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  avatarUrl    String?
+  email        String         @unique
+  password     String?         // Will be hashed
+  salt         String?        // For password hashing
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  lastLoginAt  DateTime?
+  role         Role           @default(USER)
+  websites     Website[]      @relation("WebsiteOwner")
+  permissions  Permission[]   
+  tickets      Ticket[]        
+  notifications Notification[]
+  sessions     Session[]
+
+  @@index([email])
+  assignedTickets Ticket[] @relation("AssignedTickets")
+  createdTickets  Ticket[] @relation("CreatedTickets")
+  Media Media[]
+  Comment Comment[]
+  Website Website[] @relation("WebsiteCollaborators")
+  Account Account[]
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String  
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? 
+  access_token      String? 
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+
+  @@index([userId])
+}
+
+model Permission {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websiteId    String
+  website      Website    @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  accessLevel  AccessLevel
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([websiteId])
+  @@unique([userId, websiteId])
+}
+
+enum AccessLevel {
+  READ
+  WRITE
+  ADMIN
+}
+
+model Website {
+  id               String        @id @default(uuid())
+  name             String
+  description      String?
+  logo             String?
+  subDomain        String        @unique
+  customDomain     String?       @unique
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  ownerId          String
+  owner            User          @relation("WebsiteOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  collaborators    User[]        @relation("WebsiteCollaborators")
+  pages            Page[]
+  media            Media[]
+  forms            Form[]
+  settings         WebsiteSettings?
+  analytics        Analytics[]
+  published        Boolean       @default(false)
+  publishedAt      DateTime?
+  templateId       String?
+  template         Template?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+  @@index([subDomain])
+  @@index([customDomain])
+  Ticket Ticket[]
+  Permission Permission[]
+}
+
+model Template {
+  id           String     @id @default(uuid())
+  name         String
+  description  String?
+  thumbnail    String
+  content      Json       // JSON structure of template components
+  categories   String[]   // Array of category tags
+  isFree       Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  websites     Website[]
+}
+
+model WebsiteSettings {
+  id           String    @id @default(uuid())
+  websiteId    String    @unique
+  website      Website   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  theme        String    @default("light")
+  colors       Json?     // JSON object of color scheme
+  fonts        Json?     // JSON object of font settings
+  seo          Json?     // JSON object of SEO settings
+  social       Json?     // JSON object of social media links
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+
+model Page {
+  id           String    @id @default(uuid())
+  title        String
+  slug         String
+  content      Json      // JSON structure of page content
+  order        Int
+  isHomepage   Boolean   @default(false)
+  isPublished  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  websiteId    String
+  website      Website   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  seo          Json?     // JSON object of SEO settings
+  metadata     Json?     // Additional metadata
+
+  @@index([websiteId])
+  @@unique([websiteId, slug])
+}
+
+model Media {
+  id           String    @id @default(uuid())
+  name         String
+  url          String
+  thumbnailUrl String?
+  type         String    // "image", "video", "document", etc.
+  size         Int
+  dimensions   Json?     // { width, height } for images/videos
+  duration     Int?      // For videos/audio
+  format       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  websiteId    String
+  website      Website   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@index([uploadedById])
+}
+
+model Form {
+  id           String       @id @default(uuid())
+  name         String
+  slug         String
+  fields       Json         // JSON array of field definitions
+  submissions  FormSubmission[]
+  settings     Json?        // JSON object of form settings
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  websiteId    String
+  website      Website      @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@unique([websiteId, slug])
+}
+
+model FormSubmission {
+  id           String    @id @default(uuid())
+  formId       String
+  form         Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  data         Json      // JSON object of submission data
+  createdAt    DateTime  @default(now())
+  ipAddress    String?
+  userAgent    String?
+  location     Json?     // GeoIP data
+
+  @@index([formId])
+  @@index([createdAt])
+}
+
+model Analytics {
+  id           String    @id @default(uuid())
+  websiteId    String
+  website      Website   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  pageViews    Int       @default(0)
+  uniqueVisitors Int     @default(0)
+  date         DateTime
+  referrer     String?
+  country      String?
+  device       Json?     // { type, brand, model }
+  browser      Json?     // { name, version }
+  os           Json?     // { name, version }
+
+  @@index([websiteId])
+  @@index([date])
+}
+
+model Ticket {
+  id          String     @id @default(uuid())
+  title       String
+  description String
+  status      TicketStatus @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  createdById String
+  createdBy   User       @relation("CreatedTickets", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedToId String?
+  assignedTo  User?      @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+  websiteId   String?  
+  website     Website?   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  labels      String[]   // Array of label strings
+
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([websiteId])
+  @@index([status])
+  @@index([priority])
+  User User[]
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachments String[] // Array of attachment URLs
+
+  @@index([ticketId])
+  @@index([userId])
+}
+
+model Notification {
+  id           String   @id @default(uuid())
+  title        String
+  message      String
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  link         String?  // URL to relevant resource
+  type         NotificationType
+  metadata     Json?    // Additional notification data
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  SYSTEM
+  TICKET
+  COLLABORATION
+  FORM_SUBMISSION
+  WEBSITE_PUBLISHED
+}

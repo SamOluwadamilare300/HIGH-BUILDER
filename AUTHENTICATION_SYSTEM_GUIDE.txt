@@ -1,0 +1,235 @@
+# Authentication System with Auth.js, Prisma, and Neon PostgreSQL in Next.js
+
+## Overview of the Project
+
+This project implements role-based authentication using Auth.js (formerly NextAuth.js), Prisma ORM, and Neon PostgreSQL within a Next.js application. As the core developer, you're responsible for organizing the folder structure, implementing authentication, and ensuring proper role-based access control.
+
+## What The Recruiter Expects From You
+
+Based on the project README, as the core developer handling this project, you are expected to:
+
+1. **Organize the src folder structure** according to the required layout shown below
+2. **Implement Auth.js integration** with:
+   - Google OAuth provider
+   - Email/Password (Credentials provider)
+   - Session callback that includes the `role` field
+3. **Create the middleware.ts file** that:
+   - Redirects unauthenticated users to `/auth/sign-in`
+   - Redirects authenticated users based on role:
+     - Admin users to `/dashboard/admin`
+     - Regular users to `/dashboard/user`
+4. **Develop authentication pages**:
+   - Sign-in page
+   - Sign-up page
+5. **Build dashboard interfaces**:
+   - User dashboard showing user details (email, createdAt timestamp)
+   - Admin dashboard that lists all users and includes a "Promote to Admin" button
+6. **Implement role promotion functionality** using Next.js server actions to update the role field in the database
+
+You should follow the project timeline as specified in the README:
+- Day 1: Kickoff & Setup
+- Days 2-4: Implementation
+- Day 5: Testing & Buffer
+- Day 6: Review & Handoff
+
+The project must be completed within 6 days of assignment start.
+
+## Key Components
+
+### 1. Auth.js (Next Auth v5)
+Auth.js provides the authentication framework. Key features to implement:
+- Multiple authentication providers (Email/Password and Google OAuth)
+- Session management (JWT strategy)
+- Role-based access control using the User schema's `role` field
+
+### 2. Prisma ORM
+Prisma provides type-safe database access. The schema is already defined with:
+- User model with role field
+- Account model for OAuth connections
+- Session model for authentication management
+
+### 3. Neon PostgreSQL
+A serverless PostgreSQL database service that provides:
+- Scalable cloud-based database
+- Compatible with Prisma
+- Stores user data, authentication information, and application data
+
+## Project Requirements
+
+### Folder Structure to Implement
+```
+src
+  ├─ auth
+  │    ├─ sign-in/page.tsx     # Sign-in page
+  │    └─ sign-up/page.tsx     # Sign-up page
+  ├─ app
+       dashboard
+  │    ├─ user/page.tsx        # User dashboard interface
+  │    └─ admin/page.tsx       # Admin dashboard interface
+  ├─ layout.tsx               # Root layout with SessionProvider
+  ├─ middleware.ts            # Redirect logic based on role
+  └─ lib
+       ├─ auth.ts             # Auth.js configuration (providers, callbacks, session)
+       └─ prisma.ts           # Prisma client instance (already exists)
+```
+
+### Authentication Flow
+1. User signs in via Email/Password or Google OAuth
+2. Auth.js authenticates the user and creates a session
+3. The middleware redirects users based on their role:
+   - `/dashboard/admin` if `role === 'Admin'`
+   - `/dashboard/user` if `role === 'User'`
+4. Protected routes check for authentication and proper role
+
+## Implementation Steps
+
+### 1. Auth.js Configuration (`src/lib/auth.ts`)
+
+Create a configuration file that:
+- Sets up Google OAuth provider
+- Sets up Credentials provider for Email/Password
+- Configures session callbacks to include the `role` field
+- Connects Auth.js to Prisma via the PrismaAdapter
+
+Example structure:
+```typescript
+import NextAuth from "next-auth";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
+import { prisma } from "@/lib/prisma"; // Already defined
+
+export const authOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET
+    }),
+    Credentials({
+      // Email/Password authentication
+    })
+  ],
+  callbacks: {
+    session: ({ session, user }) => {
+      if (session?.user) {
+        session.user.role = user.role;
+        session.user.id = user.id;
+      }
+      return session;
+    }
+  },
+  pages: {
+    signIn: "/auth/sign-in",
+    signOut: "/auth/sign-out",
+  }
+};
+
+export default NextAuth(authOptions);
+```
+
+### 2. Middleware (`src/middleware.ts`)
+
+Create a middleware to handle redirection based on authentication status and roles:
+```typescript
+import { getToken } from "next-auth/jwt";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export async function middleware(req: NextRequest) {
+  const session = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const pathname = req.nextUrl.pathname;
+
+  // Redirect unauthenticated users to sign-in
+  if (!session && pathname !== "/auth/sign-in") {
+    return NextResponse.redirect(new URL("/auth/sign-in", req.url));
+  }
+
+  // Redirect based on role
+  if (session) {
+    if (pathname === "/dashboard/admin" && session.role !== "ADMIN") {
+      return NextResponse.redirect(new URL("/dashboard/user", req.url));
+    }
+
+    // Redirect from home to appropriate dashboard
+    if (pathname === "/") {
+      if (session.role === "ADMIN") {
+        return NextResponse.redirect(new URL("/dashboard/admin", req.url));
+      } else {
+        return NextResponse.redirect(new URL("/dashboard/user", req.url));
+      }
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/", "/dashboard/:path*", "/auth/:path*"],
+};
+```
+
+### 3. Sign-In/Sign-Up Pages
+
+Create authentication pages with:
+- Forms for email/password login
+- Google OAuth button
+- Form validation
+- Error handling
+
+### 4. Dashboard Pages
+
+- User dashboard showing user information
+- Admin dashboard with user management capabilities including role promotion
+- Server-side authentication checks
+- Appropriate UI components
+
+## Best Practices
+
+1. **Security**:
+   - Store sensitive information in environment variables
+   - Use secure authentication flows
+   - Implement proper password hashing (if using credentials)
+   - Set appropriate CORS settings
+
+2. **Performance**:
+   - Use Prisma's connection pooling
+   - Optimize queries with select and include
+   - Use server components where possible
+
+3. **Role-Based Access Control**:
+   - Check roles on both client and server side
+   - Use middleware for route protection
+   - Include role information in the session
+
+4. **Error Handling**:
+   - Implement appropriate error messages
+   - Handle authentication failures gracefully
+   - Log authentication events appropriately
+
+## Recommended Resources
+
+1. **Auth.js (NextAuth) Documentation**:
+   - Official Docs: https://authjs.dev/
+   - Role-Based Access Control: https://authjs.dev/guides/role-based-access-control
+
+2. **Video Tutorials**:
+   - Next Auth v5 Complete Guide by Code with Antonio: https://www.youtube.com/watch?v=sQ3fPyko6o8
+   - Next Auth V5 - Advanced Guide by Code with Antonio: https://www.youtube.com/watch?v=1MTyCvS05V4
+   - Role-Based Access Control with Next Auth: https://www.youtube.com/watch?v=ay-atEUGIc4
+
+3. **Prisma with Auth.js**:
+   - Prisma Adapter: https://authjs.dev/reference/adapter/prisma
+   - Database Schema: https://authjs.dev/reference/adapter/prisma#create-the-prisma-schema
+
+4. **Neon PostgreSQL Integration**:
+   - Neon with Auth.js: https://neon.tech/docs/guides/auth-authjs
+
+## Final Tips
+
+1. Implement the project step-by-step: first set up Auth.js, then role-based controls, then the UI.
+2. Test thoroughly with different user roles.
+3. Focus on security best practices.
+4. Follow the project requirements closely, but don't be afraid to suggest improvements.
+
+Good luck with your implementation! 

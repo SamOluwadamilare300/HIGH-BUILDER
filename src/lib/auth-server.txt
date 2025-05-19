@@ -1,0 +1,6 @@
+// This file is for server-side authentication functions only
+// Do not import this file in client components
+
+import { auth } from "./auth"
+
+export { auth } 
