@@ -1,5 +1,4 @@
 import { SignUpForm } from "@/components/signup-form";
-import { RegisterForm } from "@/components/register-form";
 import { 
   Card,
   CardContent, 
@@ -21,8 +20,7 @@ export default function SignUpPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {/* <SignUpForm /> */}
-            <RegisterForm/>
+            <SignUpForm />
           </CardContent>
         </Card>
       </div>

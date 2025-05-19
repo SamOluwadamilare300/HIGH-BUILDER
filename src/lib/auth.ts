@@ -1,93 +1,106 @@
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import github from "next-auth/providers/github";
-import google from "next-auth/providers/google";
-import CredentialsProvider from "next-auth/providers/credentials";
+import GitHub from "next-auth/providers/github";
+import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { prisma } from "./prisma";
+import prisma from "./prisma";
+import { Role } from "@prisma/client";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
+  secret: process.env.AUTH_SECRET ?? '',
   adapter: PrismaAdapter(prisma),
   pages: {
-    signIn: "/login",
+    signIn: "/auth/sign-in",
+    error: "/auth/error",
   },
   providers: [
-    github,
-    google,
-    CredentialsProvider({
+    GitHub,
+    Google,
+    Credentials({
       name: "Sign in",
-      id: "credentials",
       credentials: {
-        email: {
-          label: "Email",
-          type: "email",
-          placeholder: "example@example.com",
-        },
+        email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) {
-          return null;
+    
+      authorize: async (credentials) => {
+        const email = credentials?.email ? String(credentials.email) : undefined;
+        const password = credentials?.password as string;
+
+        if (!email || !password) {
+          throw new Error("Please provide both email & password");
         }
 
-        const user = await prisma.user.findUnique({
-          where: {
-            email: String(credentials.email),
-          },
-        });
+        const user = await prisma.user.findFirst({ where: { email: email } });
+        if (!user || !user.password) {
+          throw new Error("Invalid email or password");
+        }
 
-        if (
-          !user ||
-          !(await bcrypt.compare(String(credentials.password), user.password!))
-        ) {
-          return null;
+        const isMatched = await bcrypt.compare(
+          password.toString(),
+          user.password.toString()
+        );
+
+        if (!isMatched) {
+          throw new Error("Password did not match");
         }
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          randomKey: "Hey cool",
+          role: user.role || Role.USER,
         };
       },
     }),
   ],
   callbacks: {
-    authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user;
-      const paths = ["/profile", "/client-side"];
-      const isProtected = paths.some((path) =>
-        nextUrl.pathname.startsWith(path)
-      );
-
-      if (isProtected && !isLoggedIn) {
-        const redirectUrl = new URL("/api/auth/signin", nextUrl.origin);
-        redirectUrl.searchParams.append("callbackUrl", nextUrl.href);
-        return Response.redirect(redirectUrl);
-      }
-      return true;
-    },
-    jwt: ({ token, user }) => {
+    async jwt({ token, user }) {
       if (user) {
-        const u = user as unknown as any;
-        return {
-          ...token,
-          id: u.id,
-          randomKey: u.randomKey,
-        };
+        token.id = user.id
+        token.role = user.role
       }
       return token;
     },
-    session(params) {
-      return {
-        ...params.session,
-        user: {
-          ...params.session.user,
-          id: params.token.id as string,
-          randomKey: params.token.randomKey,
-        },
-      };
+    async session({ session, token }) {
+      if (token?.sub) {
+        session.user.id = token.sub;
+      }
+      if (token?.role) {
+        session.user.role = token.role as Role;
+      }
+      return session;
+    },
+    signIn: async ({ user, account }) => {
+      if (account?.provider === "google") {
+        try {
+          if (!user.email) {
+            throw new Error("Google account missing email");
+          }
+          const email = user.email.toLowerCase();
+          const name = user.name || "Unknown";
+
+          const alreadyUser = await prisma.user.findUnique({
+            where: { email }
+          });
+          if (!alreadyUser) {
+            await prisma.user.create({
+              data: {
+                name,
+                email,
+                role: Role.USER
+              },
+            });
+          }
+          return true;
+        } catch (error) {
+          console.error("Google sign-in error:", error);
+          return false;
+        }
+      }
+      return true;
     },
   },
 });

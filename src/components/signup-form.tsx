@@ -1,71 +1,54 @@
-"use client";
+'use client';
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { FcGoogle } from "react-icons/fc";
 import Link from "next/link";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { SubmitHandler, useForm } from "react-hook-form";
 import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { CreateUserInput, createUserSchema } from "@/lib/user-schema";
+import { register } from "@/action/user";
 
 export function SignUpForm() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  
+  const {
+    handleSubmit,
+    register: formRegister,
+    formState: { errors },
+  } = useForm<CreateUserInput>({
+    resolver: zodResolver(createUserSchema),
+  });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFormData((prev) => ({ ...prev, [id]: value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmitHandler: SubmitHandler<CreateUserInput> = async (values) => {
     setIsLoading(true);
     setError(null);
-
+    setDebugInfo(null);
+    
     try {
-      // Register user
-      const response = await fetch("/api/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const formData = new FormData();
+      formData.append('name', values.name);
+      formData.append('email', values.email);
+      formData.append('password', values.password);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Registration failed");
-      }
-
-      // Auto-login after registration
-      const result = await signIn("credentials", {
-        email: formData.email,
-        password: formData.password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-
-      if (result?.ok) {
-        router.push("/");
-        router.refresh();
-      }
-    } catch (error) {
-      console.error("Signup error:", error);
-      setError(
-        error instanceof Error ? error.message : "An unknown error occurred"
-      );
+      // Call server action
+      await register(formData);
+      
+      // If successful, the server action will handle the redirect
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      setError(err.message || 'An error occurred during registration');
+      setDebugInfo(JSON.stringify(err, null, 2));
     } finally {
       setIsLoading(false);
     }
   };
+  
   const handleGoogleSignUp = () => {
     signIn("google", { callbackUrl: "/" });
   };
@@ -78,19 +61,25 @@ export function SignUpForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="grid gap-4">
+      {debugInfo && (
+        <div className="bg-blue-100 text-blue-800 text-sm p-2 rounded-md overflow-auto">
+          <p className="font-bold">Debug Info:</p>
+          <pre className="mt-1 whitespace-pre-wrap">{debugInfo}</pre>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmitHandler)} className="grid gap-4">
         <div className="grid gap-2">
           <Label htmlFor="name">Full Name</Label>
           <Input
             id="name"
-            type="text"
             placeholder="John Doe"
-            required
-            minLength={2}
             disabled={isLoading}
-            value={formData.name}
-            onChange={handleChange}
+            {...formRegister("name")}
           />
+          {errors.name && (
+            <p className="text-sm text-destructive">{errors.name.message}</p>
+          )}
         </div>
 
         <div className="grid gap-2">
@@ -99,11 +88,12 @@ export function SignUpForm() {
             id="email"
             type="email"
             placeholder="name@example.com"
-            required
             disabled={isLoading}
-            value={formData.email}
-            onChange={handleChange}
+            {...formRegister("email")}
           />
+          {errors.email && (
+            <p className="text-sm text-destructive">{errors.email.message}</p>
+          )}
         </div>
 
         <div className="grid gap-2">
@@ -112,12 +102,12 @@ export function SignUpForm() {
             id="password"
             type="password"
             placeholder="••••••••"
-            required
-            minLength={8}
             disabled={isLoading}
-            value={formData.password}
-            onChange={handleChange}
+            {...formRegister("password")}
           />
+          {errors.password && (
+            <p className="text-sm text-destructive">{errors.password.message}</p>
+          )}
         </div>
 
         <Button type="submit" disabled={isLoading}>
