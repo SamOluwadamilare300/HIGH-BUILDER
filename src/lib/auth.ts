@@ -52,6 +52,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role || Role.USER,
+        } as {
+          id: string;
+          email: string;
+          name: string;
+          role: Role;
         };
       },
     }),
@@ -90,7 +95,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               data: {
                 name,
                 email,
-                role: Role.USER
+                role: Role.USER,
+                password: "", // Set to empty string or a placeholder since Google users may not have a password
               },
             });
           }
@@ -103,4 +109,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
   },
-});
+})

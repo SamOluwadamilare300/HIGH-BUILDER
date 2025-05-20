@@ -1,12 +1,12 @@
 import { auth } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
+// import { prisma } from "@/lib/prisma"
 import { Button } from "@/components/ui/button"
 import { format } from "date-fns"
 import { revalidatePath } from "next/cache"
 import { Role, User } from "@/generated/prisma/index"
 
 async function promoteToAdmin(userId: string) {
-  "use server"
+  // "use server"  //Not in any circumstances will you put this in a server action "use server" here inside the code.
   
   await prisma.user.update({
     where: { id: userId },
