@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { signIn } from "next-auth/react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useRouter } from "next/navigation"
-import { FcGoogle } from "react-icons/fc"
 import Link from "next/link"
+import { toast } from "sonner"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
@@ -16,36 +16,56 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
+  // Check for error parameter in URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const errorType = searchParams.get("error")
+    const errorCode = searchParams.get("code")
+    
+    if (errorType) {
+      console.log(`Auth error detected: ${errorType}, code: ${errorCode}`)
+      let errorMessage = "Authentication failed"
+      
+      if (errorType === "CredentialsSignin") {
+        errorMessage = "Invalid email or password. Please try again."
+      }
+      
+      setError(errorMessage)
+      toast.error(errorMessage)
+    }
+  }, [])
+
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
 
     try {
+      console.log("Attempting login with:", { email })
+      
+      // First try without redirect to handle errors better
       const result = await signIn("credentials", {
         email,
         password,
         redirect: false,
       })
-
+      
+      console.log("Sign in result:", result)
+      
       if (result?.error) {
         setError("Invalid email or password")
-      } else {
-        router.refresh()
+        toast.error("Invalid email or password")
+      } else if (result?.ok) {
+        toast.success("Login successful!")
+        // Redirect after successful login
+        router.push("/dashboard/user")
       }
-    } catch (error) {
-      setError("An error occurred during login")
+    } catch (error: any) {
+      console.error("Login error:", error)
+      const errorMessage = error.message || "An error occurred during login"
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleGoogleLogin = async () => {
-    setIsLoading(true)
-    try {
-      await signIn("google", { callbackUrl: "/" })
-    } catch (error) {
-      setError("An error occurred with Google sign in")
       setIsLoading(false)
     }
   }
@@ -92,26 +112,6 @@ export function LoginForm() {
           {isLoading ? "Signing in..." : "Sign In"}
         </Button>
       </form>
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">
-            Or continue with
-          </span>
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        onClick={handleGoogleLogin}
-        disabled={isLoading}
-      >
-        <FcGoogle className="mr-2 h-4 w-4" />
-        Google
-      </Button>
       <div className="text-center text-sm text-muted-foreground mt-4">
         Don't have an account?{" "}
         <Link href="/auth/sign-up" className="text-primary hover:underline">

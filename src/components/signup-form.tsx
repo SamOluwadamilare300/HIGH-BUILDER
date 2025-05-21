@@ -11,11 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CreateUserInput, createUserSchema } from "@/lib/user-schema";
 import { register } from "@/action/user";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export function SignUpForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const router = useRouter();
   
   const {
     handleSubmit,
@@ -37,13 +40,22 @@ export function SignUpForm() {
       formData.append('password', values.password);
 
       // Call server action
-      await register(formData);
+      const result = await register(formData);
       
-      // If successful, the server action will handle the redirect
+      if (result?.success) {
+        // Show success toast
+        toast.success(result.message);
+        
+        // Redirect to sign-in page after a short delay
+        setTimeout(() => {
+          router.push('/auth/sign-in');
+        }, 1500);
+      }
     } catch (err: any) {
       console.error('Registration error:', err);
       setError(err.message || 'An error occurred during registration');
       setDebugInfo(JSON.stringify(err, null, 2));
+      toast.error(err.message || 'An error occurred during registration');
     } finally {
       setIsLoading(false);
     }

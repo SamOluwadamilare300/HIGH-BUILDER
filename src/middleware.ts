@@ -2,56 +2,44 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-// Define the Role enum inline to avoid importing from Prisma in middleware (Edge runtime)
-enum Role {
-  ADMIN = "ADMIN",
-  USER = "USER"
-}
+// Public routes that don't require authentication
+const publicRoutes = ["/auth/sign-in", "/auth/sign-up", "/"];
 
 export async function middleware(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
   const pathname = req.nextUrl.pathname;
-
-  // Public routes (accessible without authentication)
-  const publicRoutes = [
-    "/",
-    "/auth/sign-in",
-    "/auth/sign-up"
-  ];
-
-  // If the user is not authenticated and trying to access a protected route
-  if (!token && !publicRoutes.includes(pathname)) {
-    // Redirect to sign-in page
-    return NextResponse.redirect(new URL("/auth/sign-in", req.url));
+  
+  // Check if the request is for a public route
+  if (publicRoutes.includes(pathname)) {
+    return NextResponse.next();
   }
-
-  // If the user is authenticated
-  if (token) {
-    const role = token.role as Role;
+  
+  // Get the token from the request
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  
+  // If no token and trying to access a protected route
+  if (!token) {
+    // Redirect to sign-in page with return URL
+    const signInUrl = new URL("/auth/sign-in", req.url);
+    signInUrl.searchParams.set("callbackUrl", req.url);
+    return NextResponse.redirect(signInUrl);
+  }
+  
+  // For dashboard routes, check role-based access
+  if (pathname.startsWith("/dashboard/")) {
+    const role = token.role as string;
     
-    // Redirect from auth pages if already logged in
-    if (pathname.startsWith("/auth/")) {
-      return NextResponse.redirect(new URL(
-        role === Role.ADMIN ? "/dashboard/admin" : "/dashboard/user", 
-        req.url
-      ));
-    }
-
-    // Check role-specific access
-    if (pathname === "/dashboard/admin" && role !== Role.ADMIN) {
+    // If trying to access admin dashboard without admin role
+    if (pathname === "/dashboard/admin" && role !== "ADMIN") {
       return NextResponse.redirect(new URL("/dashboard/user", req.url));
     }
-
-    // Redirect from home page based on role if user is authenticated
+    
+    // If at the root, redirect to appropriate dashboard
     if (pathname === "/") {
-      if (role === Role.ADMIN) {
-        return NextResponse.redirect(new URL("/dashboard/admin", req.url));
-      } else {
-        return NextResponse.redirect(new URL("/dashboard/user", req.url));
-      }
+      const dashboardPath = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/user";
+      return NextResponse.redirect(new URL(dashboardPath, req.url));
     }
   }
-
+  
   return NextResponse.next();
 }
 

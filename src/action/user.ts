@@ -15,15 +15,37 @@ export const login = async (formData: FormData) => {
     }
 
     try {
-        await signIn("credentials", {
-            redirect: false,
-            email,
-            password,
-            callbackUrl: "/",
+        // First check if user exists
+        const user = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, password: true, role: true }
         });
+
+        if (!user || !user.password) {
+            throw new Error("Invalid email or password");
+        }
+
+        // Verify password
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            throw new Error("Invalid email or password");
+        }
+
+        // Return success without calling signIn from server action
+        // The client will handle the actual sign-in
+        return { 
+            success: true, 
+            message: "Login successful", 
+            role: user.role,
+            email,
+            password 
+        };
     } catch (error) {
-        const authError = error as CredentialsSignin;
-        return authError.cause;
+        console.error("Login error:", error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("An error occurred during login");
     }
 }
 
@@ -59,14 +81,8 @@ export const register = async (formData: FormData) => {
             }
         });
 
-        // Sign in the new user
-        await signIn("credentials", {
-            redirect: false,
-            email,
-            password,
-            callbackUrl: "/",
-        });
-        // redirect("/auth/sign-in");
+        // Return success instead of auto sign-in
+        return { success: true, message: "Account created successfully!" };
     } catch (error) {
         console.error("Registration error:", error);
         throw error;

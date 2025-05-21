@@ -1,112 +1,130 @@
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import GitHub from "next-auth/providers/github";
-import Google from "next-auth/providers/google";
-import Credentials from "next-auth/providers/credentials";
+import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import prisma from "./prisma";
 import { Role } from "@prisma/client";
 
+// This is a workaround for the NextAuth types
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: Role;
+    }
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    role: Role;
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Use JWT strategy for sessions
   session: { strategy: "jwt" },
-  secret: process.env.AUTH_SECRET ?? '',
+  
+  // Set the secret key for JWT encryption
+  secret: process.env.NEXTAUTH_SECRET,
+  
+  // Use Prisma adapter for database integration
   adapter: PrismaAdapter(prisma),
+  
+  // Custom pages
   pages: {
     signIn: "/auth/sign-in",
     error: "/auth/error",
   },
+  
+  // Configure providers
   providers: [
-    GitHub,
-    Google,
-    Credentials({
-      name: "Sign in",
+    CredentialsProvider({
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-    
-      authorize: async (credentials) => {
-        const email = credentials?.email ? String(credentials.email) : undefined;
-        const password = credentials?.password as string;
-
-        if (!email || !password) {
-          throw new Error("Please provide both email & password");
+      
+      // Authorization logic
+      async authorize(credentials) {
+        try {
+          console.log("Auth attempt with email:", credentials?.email);
+          
+          // Check if credentials are provided
+          if (!credentials?.email || !credentials?.password) {
+            console.log("Missing credentials");
+            return null;
+          }
+          
+          // Find user by email
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+          });
+          
+          // Check if user exists
+          if (!user) {
+            console.log("User not found");
+            return null;
+          }
+          
+          if (!user.password) {
+            console.log("User has no password set");
+            return null;
+          }
+          
+          console.log("Found user:", { id: user.id, email: user.email, role: user.role });
+          
+          // Verify password
+          const passwordMatch = await bcrypt.compare(
+            credentials.password as string,
+            user.password
+          );
+          
+          // Check if password matches
+          if (!passwordMatch) {
+            console.log("Password does not match");
+            return null;
+          }
+          
+          console.log("Authentication successful");
+          
+          // Return user data
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error("Authentication error:", error);
+          return null;
         }
-
-        const user = await prisma.user.findFirst({ where: { email: email } });
-        if (!user || !user.password) {
-          throw new Error("Invalid email or password");
-        }
-
-        const isMatched = await bcrypt.compare(
-          password.toString(),
-          user.password.toString()
-        );
-
-        if (!isMatched) {
-          throw new Error("Password did not match");
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role || Role.USER,
-        } as {
-          id: string;
-          email: string;
-          name: string;
-          role: Role;
-        };
       },
     }),
   ],
+  
+  // Callbacks
   callbacks: {
+    // JWT callback - called when JWT is created / updated
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id
-        token.role = user.role
+        token.id = user.id as string;
+        token.role = user.role as Role;
       }
       return token;
     },
+    
+    // Session callback - called whenever a session is checked
     async session({ session, token }) {
-      if (token?.sub) {
-        session.user.id = token.sub;
-      }
-      if (token?.role) {
-        session.user.role = token.role as Role;
+      if (session.user) {
+        session.user.id = token.id;
+        session.user.role = token.role;
       }
       return session;
-    },
-    signIn: async ({ user, account }) => {
-      if (account?.provider === "google") {
-        try {
-          if (!user.email) {
-            throw new Error("Google account missing email");
-          }
-          const email = user.email.toLowerCase();
-          const name = user.name || "Unknown";
-
-          const alreadyUser = await prisma.user.findUnique({
-            where: { email }
-          });
-          if (!alreadyUser) {
-            await prisma.user.create({
-              data: {
-                name,
-                email,
-                role: Role.USER,
-                password: "", // Set to empty string or a placeholder since Google users may not have a password
-              },
-            });
-          }
-          return true;
-        } catch (error) {
-          console.error("Google sign-in error:", error);
-          return false;
-        }
-      }
-      return true;
     },
   },
 })
